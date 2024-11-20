@@ -1,14 +1,13 @@
 const express = require("express");
 const app = express();
 const bodyParser = require("body-parser");
+require("dotenv").config();
 
-// Middleware for parsing JSON
 app.use(bodyParser.json());
 
 app.post("/predict", (req, res) => {
-  const investors = req.body; // Expecting JSON array or object in the request body
+  const investors = req.body;
 
-  // Check if `investors` is empty or invalid
   if (!investors || (Array.isArray(investors) && investors.length === 0)) {
     return res.status(400).json({ error: "No stocks data provided." });
   }
@@ -18,11 +17,10 @@ app.post("/predict", (req, res) => {
     data: investors,
   };
 
-  res.status(200).json(recommendations); // Send the response
+  res.status(200).json(recommendations);
 });
 
-// Start the server
-const port = 7000;
+const port = process.env.PORT;
 app.listen(port, () => {
-  console.log(`AI service running on http://localhost:${port}`);
+  console.log(`AI service running on port:${port}`);
 });
