@@ -3,7 +3,7 @@ import tensorflow as tf
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 
-model = tf.keras.models.load_model('model_company_recommendation.h5')
+model = tf.keras.models.load_model('model.h5')
 data = pd.read_pickle('data_company_cleaned.pkl')
 
 industry_encoder = LabelEncoder()
