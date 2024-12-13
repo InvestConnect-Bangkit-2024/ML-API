@@ -1,84 +1,71 @@
 from flask import Flask, request, jsonify
-import pandas as pd
 import tensorflow as tf
-from sklearn.preprocessing import StandardScaler
-import pickle
-import numpy as np
+import pandas as pd
+from sklearn.preprocessing import LabelEncoder
 
-# Inisialisasi Flask
+# Load the model and data
+model = tf.keras.models.load_model('model_company_recommendation.h5')
+data = pd.read_pickle('data_company_cleaned.pkl')
+
+# Label encoders for categorical features
+industry_encoder = LabelEncoder()
+stage_encoder = LabelEncoder()
+business_model_encoder = LabelEncoder()
+
+# Fit label encoders on the data
+industry_encoder.fit(data['Industry/Sector'])
+stage_encoder.fit(data['Stage'])
+business_model_encoder.fit(data['Business Model'])
+
+# Initialize the Flask application
 app = Flask(__name__)
 
-# Load model dan scaler
-try:
-    model = tf.keras.models.load_model('model_company_recommendation.h5')
-except Exception as e:
-    raise RuntimeError(f"Error loading model: {e}")
+@app.route('/')
+def index():
+    return 'Hallo!'
 
-try:
-    with open('scaler.pkl', 'rb') as file:
-        scaler = pickle.load(file)
-except FileNotFoundError:
-    scaler = None
-
-# Load dataset untuk referensi
-try:
-    data = pd.read_csv('data_company_cleaned.csv')
-except Exception as e:
-    raise RuntimeError(f"Error loading dataset: {e}")
-
-# Validasi input JSON
-required_fields = ['Industry/Sector', 'Stage', 'Business Model', 'Loyal Customer']
-
-def validate_input(user_input):
-    for field in required_fields:
-        if field not in user_input:
-            raise ValueError(f"Missing required field: {field}")
-    return True
-
-# Endpoint untuk mendapatkan rekomendasi perusahaan
+# API route for recommendations
 @app.route('/recommend', methods=['POST'])
-def recommend_company():
+def recommend():
     try:
-        # Ambil inputan dari request
-        user_input = request.get_json()
+        # Get JSON data from the request
+        input_data = request.get_json()
+
+        # Extract user input
+        industry = input_data['Industry/Sector']
+        stage = input_data['Stage']
+        business_model = input_data['Business Model']
+        loyal_customer = input_data['Loyal Customer']
+
+        # Encode the categorical inputs
+        industry_encoded = industry_encoder.transform([industry])[0]
+        stage_encoded = stage_encoder.transform([stage])[0]
+        business_model_encoded = business_model_encoder.transform([business_model])[0]
+
+        # Prepare the input data for the model
+        input_features = [
+            industry_encoded,
+            stage_encoded,
+            business_model_encoded,
+            loyal_customer
+        ]
         
-        # Validasi input
-        validate_input(user_input)
+        # Convert to the proper shape (batch size, number of features)
+        input_features = pd.DataFrame([input_features])
 
-        # Data input dari user
-        input_data = pd.DataFrame({
-            'Industry/Sector': [user_input['Industry/Sector']],
-            'Stage': [user_input['Stage']],
-            'Business Model': [user_input['Business Model']],
-            'Loyal Customer': [float(user_input['Loyal Customer'])]  # Pastikan numeric
-        })
+        # Predict the company recommendations
+        predictions = model.predict(input_features)
+        
+        # Post-process predictions (sorting, top-n, etc.)
+        recommended_companies = data.iloc[predictions.argsort()[0][:5]]  # Top 5 recommendations
 
-        # Jika ada preprocessing tambahan seperti encoding, tambahkan di sini
-        # Contoh encoding kategori (jika perlu)
-        # input_data_encoded = encode_features(input_data)
-
-        # Skalakan data jika scaler tersedia
-        if scaler:
-            numeric_features = ['Loyal Customer']
-            input_data[numeric_features] = scaler.transform(input_data[numeric_features])
-
-        # Melakukan prediksi dengan model
-        prediction = model.predict(input_data)
-
-        # Ambil top-5 rekomendasi berdasarkan hasil prediksi
-        top_companies_idx = np.argsort(prediction[0])[-5:][::-1]  # Sort descending
-        top_companies = data.iloc[top_companies_idx]
-
-        # Format hasil rekomendasi
-        response = top_companies[['Company Name', 'Industry/Sector', 'Stage', 'Business Model']].to_dict(orient='records')
+        # Format the response
+        response = recommended_companies[['Company Name', 'Industry/Sector', 'Stage', 'Business Model']].to_dict(orient='records')
 
         return jsonify({'recommendations': response}), 200
 
-    except ValueError as ve:
-        return jsonify({'error': str(ve)}), 400
     except Exception as e:
-        return jsonify({'error': f"Internal server error: {e}"}), 500
+        return jsonify({'error': str(e)}), 400
 
-# Run aplikasi Flask
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080, debug=True)
